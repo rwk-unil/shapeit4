@@ -1,3 +1,34 @@
+# SHAPEIT4 fork with xSqueezeIt file format support
+
+- This fork was made to add xSqueezeIt support to SHAPEIT4
+- Explore what API would xSqueezeIt need to provide to be integrated
+- Show a real world example of xSqueezeIt usage
+
+```shell
+# Compile with :
+make XSI_SUPPORT=YES
+# Run with the variant bcf file of xSqueezeIt (and not the binary file)
+./bin/shapeit4.2 --input test/unphased.xsi_var.bcf --map test/chr20.b37.gmap.gz --region 20 --output xsi_phased2.bcf
+```
+
+It also supports xSqueezeIt for the reference / scaffolding. However, it does not support phase sets because xSqueezeIt does not support the `PS` field for the moment.
+
+## xSqueezeIt
+
+Github link : https://github.com/rwk-unil/xSqueezeIt
+
+### Compress bcf files
+
+```shell
+# Compress the test file with xSqueezeIt (see build instructions in git link above)
+xsqueezeit -c -f test/unphased.bcf -o test/unphased.xsi --zstd
+# This will generate two files : unphased.xsi and unphased.xsi_var.bcf
+# Both files are required, pass the bcf as input to SHAPEIT
+...
+xsqueezeit -c -f test/reference.bcf -o test/reference.xsi --zstd
+...
+```
+
 # Segmented HAPlotype Estimation and Imputation Tools version 4 (SHAPEIT4)
 
 SHAPEIT4 is a fast and accurate method for estimation of haplotypes (aka phasing) for SNP array and sequencing data. The version 4 is a refactored and improved version of the SHAPEIT algorithm with multiple key additional features:
