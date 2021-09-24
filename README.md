@@ -19,7 +19,7 @@ BCF Genotype Data Compressor
 
 Github link : https://github.com/rwk-unil/xSqueezeIt
 
-xSqueezeIt compresses the `GT` data of a BCF file in a binary file (for example `.xsi` or `.bin`) but keeps the variant information in BCF, so two output files are generated. The variant BCF file has a `_var.bcf` suffix to the chosen binary output file (see example below). The bcf file is to be passed as an argument to SHAPEIT and not the binary file.
+xSqueezeIt compresses the `GT` data of a BCF file in a binary file (for example `.xsi` or `.bin`) but keeps the variant information in BCF, so two output files are generated. The variant BCF file has a `_var.bcf` suffix to the chosen binary output filename (see example below). The bcf file is to be passed as an argument to SHAPEIT and not the binary file.
 
 ### Compress bcf files
 
