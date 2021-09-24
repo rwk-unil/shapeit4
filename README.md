@@ -15,7 +15,11 @@ It also supports xSqueezeIt for the reference / scaffolding. However, it does no
 
 ## xSqueezeIt
 
+BCF Genotype Data Compressor
+
 Github link : https://github.com/rwk-unil/xSqueezeIt
+
+xSqueezeIt compresses the `GT` data of a BCF file in a binary file file (for example `.xsi` or `.bin`) but keeps the variant information in BCF, so two output files are generated. The variant BCF file has a `_var.bcf` suffix to the chosen binary output file (see example below). The bcf file is to be passed as an argument to SHAPEIT and not the binary file.
 
 ### Compress bcf files
 
@@ -23,9 +27,13 @@ Github link : https://github.com/rwk-unil/xSqueezeIt
 # Compress the test file with xSqueezeIt (see build instructions in git link above)
 xsqueezeit -c -f test/unphased.bcf -o test/unphased.xsi --zstd
 # This will generate two files : unphased.xsi and unphased.xsi_var.bcf
-# Both files are required, pass the bcf as input to SHAPEIT
+# Both files are required, pass the bcf as input to SHAPEIT, it also needs to be indexed :
+bcftools index test/unphased.xsi_var.bcf
 ...
 xsqueezeit -c -f test/reference.bcf -o test/reference.xsi --zstd
+# This will generate two files : reference.xsi and reference.xsi_var.bcf
+# Both files are required, pass the bcf as input to SHAPEIT, it also needs to be indexed :
+bcftools index test/reference.xsi_var.bcf
 ...
 ```
 
