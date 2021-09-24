@@ -21,6 +21,10 @@
 ////////////////////////////////////////////////////////////////////////////////
 #include <io/genotype_reader.h>
 
+#ifdef __XSI__
+#include "c_api.h"
+#endif
+
 genotype_reader::genotype_reader(haplotype_set & _H, genotype_set & _G, variant_map & _V, string _region, bool _use_PS_field, int _nthreads) : H(_H), G(_G), V(_V) {
 	nthreads = _nthreads;
 	n_variants = 0;
@@ -88,7 +92,11 @@ void genotype_reader::scanGenotypes(string fmain) {
 	if (bcf_sr_set_regions(sr, region.c_str(), 0) == -1) vrb.error("Impossible to jump to region [" + region + "] in [" + fmain + "]");
 	if(!(bcf_sr_add_reader (sr, fmain.c_str()))) vrb.error("Problem opening index file for [" + fmain + "]");
 	n_variants = 0;
+#ifdef __XSI__
+	n_main_samples = c_xcf_nsamples(fmain.c_str());
+#else
 	n_main_samples = bcf_hdr_nsamples(sr->readers[0].header);
+#endif
 	if (n_main_samples < 20) vrb.error("Population based phasing for less than 20 individuals is not permitted, use a reference panel to solve this issue!");
 	if (n_main_samples < 100) vrb.warning("Population based phasing for less than 100 individuals is not recommended, use a reference panel to remove this warning!");
 	bcf1_t * line;
@@ -112,8 +120,13 @@ void genotype_reader::scanGenotypes(string fmain, string fref) {
 	if(!(bcf_sr_add_reader (sr, fmain.c_str()))) vrb.error("Problem opening index file for [" + fmain + "]");
 	if(!(bcf_sr_add_reader (sr, fref.c_str()))) vrb.error("Problem opening index file for [" + fref + "]");
 	n_variants = 0;
+#ifdef __XSI__
+	n_main_samples = c_xcf_nsamples(fmain.c_str());
+	n_ref_samples = c_xcf_nsamples(fref.c_str());
+#else
 	n_main_samples = bcf_hdr_nsamples(sr->readers[0].header);
 	n_ref_samples = bcf_hdr_nsamples(sr->readers[1].header);
+#endif
 	int nset;
 	bcf1_t * line_main, * line_ref;
 	while ((nset = bcf_sr_next_line (sr))) {

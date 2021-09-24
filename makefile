@@ -34,7 +34,18 @@ LDFLAG=-O3
 
 
 #DYNAMIC LIBRARIES
-DYN_LIBS=-lz -lbz2 -lm -lpthread -llzma -lcurl -lssl -lcrypto
+DYN_LIBS=-lz -lbz2 -lm -lpthread -llzma -lcurl -lssl -lcrypto -ldeflate
+
+# xSqueezeIt Support [YES/NO]
+ifeq ($(XSI_SUPPORT),)
+XSI_SUPPORT=NO
+endif
+ifeq ($(XSI_SUPPORT),YES)
+XSI_INC=xsqueezeit/include
+XSI_LIB=xsqueezeit/libxsqueezeit.a
+DYN_LIBS+= -lzstd -lhts
+CXXFLAG+= -D__XSI__ -I$(XSI_INC)
+endif
 
 #SHAPEIT SOURCES & BINARY
 BFILE=bin/shapeit4.2
@@ -44,10 +55,13 @@ OFILE=$(shell for file in `find src -name *.cpp`; do echo obj/$$(basename $$file
 VPATH=$(shell for file in `find src -name *.cpp`; do echo $$(dirname $$file); done)
 
 #COMPILATION RULES
-all: $(BFILE)
+all: $(XSI_LIB) $(BFILE)
+
+$(XSI_LIB):
+	cd xsqueezeit; make HTSLIB_INC=$(HTSLIB_INC) HTSLIB_LIB=$(HTSLIB_LIB) # ZSTD_INC=... ZSTD_LIB=...
 
 $(BFILE): $(OFILE)
-	$(CXX) $(LDFLAG) $^ $(HTSLIB_LIB) $(BOOST_LIB_IO) $(BOOST_LIB_PO) -o $@ $(DYN_LIBS)
+	$(CXX) $(LDFLAG) $^ $(HTSLIB_LIB) $(BOOST_LIB_IO) $(BOOST_LIB_PO) $(XSI_LIB) -o $@ $(DYN_LIBS)
 
 obj/%.o: %.cpp $(HFILE)
 	$(CXX) $(CXXFLAG) -c $< -o $@ -Isrc -I$(HTSLIB_INC) -I$(BOOST_INC)

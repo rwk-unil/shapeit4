@@ -21,6 +21,10 @@
 ////////////////////////////////////////////////////////////////////////////////
 #include <io/genotype_reader.h>
 
+#ifdef __XSI__
+#include "c_api.h"
+#endif
+
 //**********************************************************************************//
 //								ONE VCF/BCF PROCESSED								//
 //								1. main genotype data								//
@@ -31,7 +35,14 @@ void genotype_reader::readGenotypes0(string funphased) {
 	if (nthreads>1) bcf_sr_set_threads(sr, nthreads);
 	bcf_sr_set_regions(sr, region.c_str(), 0);
 	bcf_sr_add_reader(sr, funphased.c_str());
+#ifdef __XSI__
+	c_xcf* c_xcf_p = c_xcf_new();
+	c_xcf_add_readers(c_xcf_p, sr);
+
+	for (int i = 0 ; i < n_main_samples ; i ++) G.vecG[i]->name = string(c_xcf_sample_name(c_xcf_p, 0, sr->readers[0].header, i));
+#else
 	for (int i = 0 ; i < n_main_samples ; i ++) G.vecG[i]->name = string(sr->readers[0].header->samples[i]);
+#endif
 	bcf1_t * line;
 	int ngt_main, *gt_arr_main = NULL, ngt_arr_main = 0;
 	int nps_main, *ps_arr_main = NULL, nps_arr_main = 0;
@@ -47,10 +58,19 @@ void genotype_reader::readGenotypes0(string funphased) {
 			string alt = string(line->d.allele[1]);
 			variant * newV = new variant (chr, pos, id, ref, alt, V.size());
 			unsigned int cref = 0, calt = 0, cmis = 0;
+#ifdef __XSI__
+			ngt_main = c_xcf_get_genotypes(c_xcf_p, 0, sr->readers[0].header, line, &gt_arr_main, &ngt_arr_main);
+#else
 			ngt_main = bcf_get_genotypes(sr->readers[0].header, line, &gt_arr_main, &ngt_arr_main);
+#endif
 			assert(ngt_main == 2 * n_main_samples);
 			if (use_PS_field) {
 				nps_main = bcf_get_format_int32(sr->readers[0].header, line, "PS", &ps_arr_main, &nps_arr_main);
+#ifdef __XSI__
+				if (nps_main <= 0) {
+					vrb.error("PS field not found\n");
+				}
+#endif
 				setPScodes(ps_arr_main, nps_main);
 			}
 			for(int i = 0 ; i < 2 * n_main_samples ; i += 2) {
@@ -82,6 +102,9 @@ void genotype_reader::readGenotypes0(string funphased) {
 	free(gt_arr_main);
 	if (ps_arr_main) free(ps_arr_main);
 	bcf_sr_destroy(sr);
+#ifdef __XSI__
+	c_xcf_delete(c_xcf_p);
+#endif
 	// Report
 	n_geno_tot = n_main_samples*n_variants;
 	string str0 = "Hom=" + stb.str(n_geno_hom*100.0/n_geno_tot, 1) + "%";
@@ -105,7 +128,14 @@ void genotype_reader::readGenotypes1(string funphased, string freference) {
 	bcf_sr_set_regions(sr, region.c_str(), 0);
 	bcf_sr_add_reader (sr, funphased.c_str());
 	bcf_sr_add_reader (sr, freference.c_str());
+#ifdef __XSI__
+	c_xcf* c_xcf_p = c_xcf_new();
+	c_xcf_add_readers(c_xcf_p, sr);
+
+	for (int i = 0 ; i < n_main_samples ; i ++) G.vecG[i]->name = string(c_xcf_sample_name(c_xcf_p, 0, sr->readers[0].header, i));
+#else
 	for (int i = 0 ; i < n_main_samples ; i ++) G.vecG[i]->name = string(sr->readers[0].header->samples[i]);
+#endif
 	unsigned int i_variant = 0, nset = 0, n_ref_missing = 0, n_ref_unphased = 0;
 	int ngt_main, *gt_arr_main = NULL, ngt_arr_main = 0;
 	int ngt_ref, *gt_arr_ref = NULL, ngt_arr_ref = 0;
@@ -124,10 +154,20 @@ void genotype_reader::readGenotypes1(string funphased, string freference) {
 				string alt = string(line_main->d.allele[1]);
 				variant * newV = new variant (chr, pos, id, ref, alt, V.size());
 				unsigned int cref = 0, calt = 0, cmis = 0;
+#ifdef __XSI__
+				ngt_main = c_xcf_get_genotypes(c_xcf_p, 0, sr->readers[0].header, line_main, &gt_arr_main, &ngt_arr_main); assert(ngt_main == 2 * n_main_samples);
+				ngt_ref = c_xcf_get_genotypes(c_xcf_p, 1, sr->readers[1].header, line_ref, &gt_arr_ref, &ngt_arr_ref); assert(ngt_ref == 2 * n_ref_samples);
+#else
 				ngt_main = bcf_get_genotypes(sr->readers[0].header, line_main, &gt_arr_main, &ngt_arr_main); assert(ngt_main == 2 * n_main_samples);
 				ngt_ref = bcf_get_genotypes(sr->readers[1].header, line_ref, &gt_arr_ref, &ngt_arr_ref); assert(ngt_ref == 2 * n_ref_samples);
+#endif
 				if (use_PS_field) {
 					nps_main = bcf_get_format_int32(sr->readers[0].header, line_main, "PS", &ps_arr_main, &nps_arr_main);
+#ifdef __XSI__
+					if (nps_main <= 0) {
+						vrb.error("PS field not found\n");
+					}
+#endif
 					setPScodes(ps_arr_main, nps_main);
 				}
 				for(int i = 0 ; i < 2 * n_main_samples ; i += 2) {
@@ -172,6 +212,9 @@ void genotype_reader::readGenotypes1(string funphased, string freference) {
 	free(gt_arr_ref);
 	if (ps_arr_main) free(ps_arr_main);
 	bcf_sr_destroy(sr);
+#ifdef __XSI__
+	c_xcf_delete(c_xcf_p);
+#endif
 	// Report
 	n_geno_tot = n_main_samples*n_variants;
 	string str0 = "Hom=" + stb.str(n_geno_hom*100.0/n_geno_tot, 1) + "%";
@@ -197,17 +240,33 @@ void genotype_reader::readGenotypes2(string funphased, string fphased) {
 	bcf_sr_set_regions(sr, region.c_str(), 0);
 	bcf_sr_add_reader (sr, funphased.c_str());
 	if (!bcf_sr_add_reader (sr, fphased.c_str())) vrb.error("Problem opening index file for [" + fphased + "]");
+#ifdef __XSI__
+	c_xcf* c_xcf_p = c_xcf_new();
+	c_xcf_add_readers(c_xcf_p, sr);
+#endif
 
 	// Mapping scaffolded samples
 	map < string, int > map_names;
 	for (int i = 0 ; i < n_main_samples ; i ++) {
+#ifdef __XSI__
+		G.vecG[i]->name = string(c_xcf_sample_name(c_xcf_p, 0, sr->readers[0].header, i));
+#else
 		G.vecG[i]->name = string(sr->readers[0].header->samples[i]);
+#endif
 		map_names.insert(pair < string, int > (G.vecG[i]->name, i));
 	}
+#ifdef __XSI__
+	int n_scaf_samples = c_xcf_nsamples(fphased.c_str());
+#else
 	int n_scaf_samples = bcf_hdr_nsamples(sr->readers[1].header);
+#endif
 	vector < int > mappingS2G = vector < int > (n_scaf_samples, -1);
 	for (int i = 0 ; i < n_scaf_samples ; i ++) {
+#ifdef __XSI__
+		string scaf_name = string(c_xcf_sample_name(c_xcf_p, 1, sr->readers[1].header, i));
+#else
 		string scaf_name = string(sr->readers[1].header->samples[i]);
+#endif
 		map < string, int > :: iterator it = map_names.find(scaf_name);
 		if (it != map_names.end()) mappingS2G[i] = it->second;
 	}
@@ -227,9 +286,18 @@ void genotype_reader::readGenotypes2(string funphased, string fphased) {
 			string alt = string(line_main->d.allele[1]);
 			variant * newV = new variant (chr, pos, id, ref, alt, V.size());
 			unsigned int cref = 0, calt = 0, cmis = 0;
+#ifdef __XSI__
+			ngt_main = c_xcf_get_genotypes(c_xcf_p, 0, sr->readers[0].header, line_main, &gt_arr_main, &ngt_arr_main); assert(ngt_main == 2 * n_main_samples);
+#else
 			ngt_main = bcf_get_genotypes(sr->readers[0].header, line_main, &gt_arr_main, &ngt_arr_main); assert(ngt_main == 2 * n_main_samples);
+#endif
 			if (use_PS_field) {
 				nps_main = bcf_get_format_int32(sr->readers[0].header, line_main, "PS", &ps_arr_main, &nps_arr_main);
+#ifdef __XSI__
+				if (nps_main <= 0) {
+					vrb.error("PS field not found\n");
+				}
+#endif
 				setPScodes(ps_arr_main, nps_main);
 			}
 			for(int i = 0 ; i < 2 * n_main_samples ; i += 2) {
@@ -254,7 +322,11 @@ void genotype_reader::readGenotypes2(string funphased, string fphased) {
 				n_geno_ips += ph;
 			}
 			if ((line_scaf=bcf_sr_get_line(sr, 1))) {
+#ifdef __XSI__
+				ngt_scaf = c_xcf_get_genotypes(c_xcf_p, 1, sr->readers[1].header, line_scaf, &gt_arr_scaf, &ngt_arr_scaf); assert(ngt_scaf == 2 * n_scaf_samples);
+#else
 				ngt_scaf = bcf_get_genotypes(sr->readers[1].header, line_scaf, &gt_arr_scaf, &ngt_arr_scaf); assert(ngt_scaf == 2 * n_scaf_samples);
+#endif
 				for(int i = 0 ; i < 2 * n_scaf_samples ; i += 2) {
 					int ind = mappingS2G[DIV2(i)];
 					if (ind>=0) {
@@ -286,6 +358,9 @@ void genotype_reader::readGenotypes2(string funphased, string fphased) {
 	free(gt_arr_scaf);
 	if (ps_arr_main) free(ps_arr_main);
 	bcf_sr_destroy(sr);
+#ifdef __XSI__
+	c_xcf_delete(c_xcf_p);
+#endif
 	// Report
 	n_geno_tot = n_main_samples*n_variants;
 	string str0 = "Hom=" + stb.str(n_geno_hom*100.0/n_geno_tot, 1) + "%";
@@ -312,17 +387,33 @@ void genotype_reader::readGenotypes3(string funphased, string freference, string
 	bcf_sr_add_reader (sr, funphased.c_str());
 	bcf_sr_add_reader (sr, freference.c_str());
 	if (!bcf_sr_add_reader (sr, fphased.c_str())) vrb.error("Problem opening index file for [" + fphased + "]");
+#ifdef __XSI__
+	c_xcf* c_xcf_p = c_xcf_new();
+	c_xcf_add_readers(c_xcf_p, sr);
+#endif
 
 	// Mapping scaffolded samples
 	map < string, int > map_names;
 	for (int i = 0 ; i < n_main_samples ; i ++) {
+#ifdef __XSI__
+		G.vecG[i]->name = string(c_xcf_sample_name(c_xcf_p, 0, sr->readers[0].header, i));
+#else
 		G.vecG[i]->name = string(sr->readers[0].header->samples[i]);
+#endif
 		map_names.insert(pair < string, int > (G.vecG[i]->name, i));
 	}
+#ifdef __XSI__
+	int n_scaf_samples = c_xcf_nsamples(fphased.c_str());
+#else
 	int n_scaf_samples = bcf_hdr_nsamples(sr->readers[2].header);
+#endif
 	vector < int > mappingS2G = vector < int > (n_scaf_samples, -1);
 	for (int i = 0 ; i < n_scaf_samples ; i ++) {
+#ifdef __XSI__
+		string scaf_name = string(c_xcf_sample_name(c_xcf_p, 2, sr->readers[2].header, i));
+#else
 		string scaf_name = string(sr->readers[2].header->samples[i]);
+#endif
 		map < string, int > :: iterator it = map_names.find(scaf_name);
 		if (it != map_names.end()) mappingS2G[i] = it->second;
 	}
@@ -343,10 +434,20 @@ void genotype_reader::readGenotypes3(string funphased, string freference, string
 			string alt = string(line_main->d.allele[1]);
 			variant * newV = new variant (chr, pos, id, ref, alt, V.size());
 			unsigned int cref = 0, calt = 0, cmis = 0;
+#ifdef __XSI__
+			ngt_main = c_xcf_get_genotypes(c_xcf_p, 0, sr->readers[0].header, line_main, &gt_arr_main, &ngt_arr_main); assert(ngt_main == 2 * n_main_samples);
+			ngt_ref = c_xcf_get_genotypes(c_xcf_p, 1, sr->readers[1].header, line_ref, &gt_arr_ref, &ngt_arr_ref); assert(ngt_ref == 2 * n_ref_samples);
+#else
 			ngt_main = bcf_get_genotypes(sr->readers[0].header, line_main, &gt_arr_main, &ngt_arr_main); assert(ngt_main == 2 * n_main_samples);
 			ngt_ref = bcf_get_genotypes(sr->readers[1].header, line_ref, &gt_arr_ref, &ngt_arr_ref); assert(ngt_ref == 2 * n_ref_samples);
+#endif
 			if (use_PS_field) {
 				nps_main = bcf_get_format_int32(sr->readers[0].header, line_main, "PS", &ps_arr_main, &nps_arr_main);
+#ifdef __XSI__
+				if (nps_main <= 0) {
+					vrb.error("PS field not found\n");
+				}
+#endif
 				setPScodes(ps_arr_main, nps_main);
 			}
 			for(int i = 0 ; i < 2 * n_main_samples ; i += 2) {
@@ -381,7 +482,11 @@ void genotype_reader::readGenotypes3(string funphased, string freference, string
 				a1?calt++:cref++;
 			}
 			if ((line_scaf=bcf_sr_get_line(sr, 2))) {
+#ifdef __XSI__
+				ngt_scaf = c_xcf_get_genotypes(c_xcf_p, 2, sr->readers[2].header, line_scaf, &gt_arr_scaf, &ngt_arr_scaf); assert(ngt_scaf == 2 * n_scaf_samples);
+#else
 				ngt_scaf = bcf_get_genotypes(sr->readers[2].header, line_scaf, &gt_arr_scaf, &ngt_arr_scaf); assert(ngt_scaf == 2 * n_scaf_samples);
+#endif
 				for(int i = 0 ; i < 2 * n_scaf_samples ; i += 2) {
 					int ind = mappingS2G[DIV2(i)];
 					if (ind>=0) {
@@ -414,6 +519,9 @@ void genotype_reader::readGenotypes3(string funphased, string freference, string
 	free(gt_arr_ref);
 	if (ps_arr_main) free(ps_arr_main);
 	bcf_sr_destroy(sr);
+#ifdef __XSI__
+	c_xcf_delete(c_xcf_p);
+#endif
 	// Report
 	n_geno_tot = n_main_samples*n_variants;
 	string str0 = "Hom=" + stb.str(n_geno_hom*100.0/(n_main_samples*n_variants), 1) + "%";
