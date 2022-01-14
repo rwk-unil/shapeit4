@@ -51,7 +51,8 @@ typedef struct bcf_file_reader_info_t {
     size_t n_samples = 0; /* The number of samples */
     size_t var_count = 0; /* The number of variant sites extracted */
     int* gt_arr = nullptr; /* Pointer on genotype data array */
-    int ngt_arr = 0; /* Size of above array as given by bcf_get_genotypes() */
+    int size_gt_arr = 0; /* Size of above array as given by bcf_get_genotypes() */
+    int ngt = 0;
     bcf1_t* line = nullptr; /* Current line pointer */
     size_t line_num = 0; /* Current line number */
     int line_alt_alleles_extracted = 0; /* For multi ALT alleles */
@@ -105,6 +106,8 @@ std::vector<std::string> extract_samples(const std::string& fname);
  * @return The number of lines (entries)
  * */
 size_t remove_samples(const std::string& ifname, const std::string& ofname);
+
+std::string get_entry_from_bcf(const std::string& filename, const char *entry_key);
 
 /**
  * @brief counts the number of entries (lines) in VCF / BCF file
@@ -283,7 +286,7 @@ std::vector<std::vector<bool> > extract_common_to_matrix(const std::string& ifna
  *        in the matrix, which can be used to decompress the missing data.
  *
  * */
-size_t replace_samples_by_pos_in_binary_matrix(const std::string& ifname, const std::string& ofname);
+size_t replace_samples_by_pos_in_binary_matrix(const std::string& ifname, const std::string& ofname, std::string xsi_fname = "", const bool new_version = false, const size_t BLOCK_LENGTH = 8192, const size_t BM_BLOCK_BITS = 15);
 
 std::vector<std::vector<bool> > extract_phase_vectors(const std::string& ifname);
 

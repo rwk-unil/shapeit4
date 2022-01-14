@@ -20,6 +20,8 @@
  * SOFTWARE.
  ******************************************************************************/
 
+#include "constexpr.hpp"
+
 #ifndef __WAH_HPP__
 #define __WAH_HPP__
 
@@ -126,6 +128,39 @@ namespace wah {
     } Wah2State_t;
 
     template<typename T = uint16_t>
+    inline size_t wah2_advance_pointer_count_ones(T*& wah_p, size_t size) {
+        constexpr size_t WAH_BITS = sizeof(T)*8-1;
+        constexpr T WAH_HIGH_BIT = 1 << WAH_BITS;
+        constexpr T WAH_MAX_COUNTER = (WAH_HIGH_BIT>>1)-1;
+        constexpr T WAH_COUNT_1_BIT = WAH_HIGH_BIT >> 1;
+        T word;
+        size_t count = 0;
+        size_t bit_position = 0;
+            while(bit_position < size) {
+            word = *wah_p;
+            if (word & WAH_HIGH_BIT) {
+                auto counter = (word & WAH_MAX_COUNTER)*WAH_BITS;
+                bit_position += counter;
+                if (word & WAH_COUNT_1_BIT) {
+                    count += counter;
+                }
+            } else {
+                bit_position += WAH_BITS;
+                //count += std::popcount(word); // C++20
+                count += __builtin_popcount(word);
+            }
+            wah_p++;
+        }
+        return count;
+    }
+
+    template<typename T = uint16_t>
+    inline size_t wah2_count_ones(const T*& wah_p, size_t size) {
+        T* p = wah_p;
+        return wah2_advance_pointer_count_ones(p, size);
+    }
+
+    template<typename T = uint16_t>
     inline void wah2_advance_pointer(T*& wah_p, size_t size) {
         constexpr size_t WAH_BITS = sizeof(T)*8-1;
         constexpr T WAH_HIGH_BIT = 1 << WAH_BITS;
@@ -144,12 +179,15 @@ namespace wah {
     }
 
     // Note that bits should be padded to accomodate the last encoding (easiest is to add sizeof(T))
-    template<typename T = uint16_t>
-    inline T* wah2_extract(T* wah_p, std::vector<bool>& bits, size_t size) {
+    template<typename T = uint16_t, bool DO_COUNT = false>
+    static inline T* wah2_extract_template(T* wah_p, std::vector<bool>& bits, size_t size, size_t& count) {
         constexpr size_t WAH_BITS = sizeof(T)*8-1;
         constexpr T WAH_HIGH_BIT = 1 << WAH_BITS;
         constexpr T WAH_COUNT_1_BIT = WAH_HIGH_BIT >> 1;
         constexpr T WAH_MAX_COUNTER = (WAH_HIGH_BIT>>1)-1;
+        if CONSTEXPR_IF (DO_COUNT) {
+            count = 0;
+        }
 
         T word;
         size_t bit_position = 0;
@@ -162,6 +200,9 @@ namespace wah {
                     for (size_t _ = bit_position; _ < stop; ++_) {
                         bits[_] = 1;
                     }
+                    if CONSTEXPR_IF (DO_COUNT) {
+                        count += (word & WAH_MAX_COUNTER)*WAH_BITS;
+                    }
                 } else {
                     // Expand with zeroes
                     for (size_t _ = bit_position; _ < stop; ++_) {
@@ -173,6 +214,9 @@ namespace wah {
                 // Expand with value
                 for (size_t _ = bit_position; _ < bit_position+WAH_BITS; ++_) {
                     bits[_] = word & 1; // May not be the most effective way
+                    if CONSTEXPR_IF (DO_COUNT) {
+                        count += word & 1;
+                    }
                     word >>= 1;
                 }
                 bit_position += WAH_BITS;
@@ -180,7 +224,19 @@ namespace wah {
             wah_p++;
         }
 
-    return wah_p;
+        return wah_p;
+    }
+
+    // Note that bits should be padded to accomodate the last encoding (easiest is to add sizeof(T))
+    template<typename T = uint16_t>
+    inline T* wah2_extract(T* wah_p, std::vector<bool>& bits, size_t size) {
+        size_t _;
+        return wah2_extract_template<T>(wah_p, bits, size, _);
+    }
+
+    template<typename T = uint16_t>
+    inline T* wah2_extract_count_ones(T* wah_p, std::vector<bool>& bits, size_t size, size_t& count) {
+        return wah2_extract_template<T, true>(wah_p, bits, size, count);
     }
 
     // This is a stream based on the current wah pointer and state
@@ -641,20 +697,92 @@ namespace wah {
         }
     }
 
+    struct DefaultPred {
+        static inline bool check(const int32_t gt_arr_entry, const int32_t alt_allele) {
+            return bcf_gt_allele(gt_arr_entry) == alt_allele;
+        }
+    };
+
+
     /**
-     * @brief Copy-less reordering wah encoder
+     * @brief Copy-less non reordering wah encoder (counts number of satisfied pred)
      * */
-    template <typename T = uint16_t, typename A = uint16_t>
-    inline std::vector<T> wah_encode2(int32_t* gt_array, const int32_t& alt_allele, const std::vector<A>& a, uint32_t& alt_allele_count, bool& has_missing) {
-        // This is a second version where a counter is used both for 0's and 1's (but a N-2 bit counter)
+    template <typename T = uint16_t, class Pred>
+    inline std::vector<T> wah_encode2_with_size(int32_t* gt_array, const int32_t& alt_allele, const size_t size, uint32_t& pred_count) {
+    // This is a second version where a counter is used both for 0's and 1's (but a N-2 bit counter)
         constexpr size_t WAH_BITS = sizeof(T)*8-1;
         // 0b1000'0000 for 8b
         constexpr T WAH_HIGH_BIT = 1 << WAH_BITS; // Solved at compile time
         constexpr T WAH_COUNT_1_BIT = WAH_HIGH_BIT >> 1;
 
         // Resize to have no problems accessing in the loop below (removes conditionals from loop)
-        size_t BITS_WAH_SIZE = a.size() / WAH_BITS;
-        const size_t BITS_REM = a.size() % WAH_BITS; // Hope compiler combines the divide above and this mod
+        size_t BITS_WAH_SIZE = size / WAH_BITS;
+        const size_t BITS_REM = size % WAH_BITS; // Hope compiler combines the divide above and this mod
+
+        std::vector<T> wah; // Output
+
+        T not_set_counter = 0;
+        T all_set_counter = 0;
+        size_t b = 0; // b = i*WAH_BITS+j // but counter reduces number of ops
+        size_t pred_counter = 0;
+        for (size_t i = 0; i < BITS_WAH_SIZE; ++i) { // Process loop
+            T word = 0;
+
+            // Scan WAH-BITS in bits (e.g., 7 for uint8_t, 31 for uint32_t)
+            for (size_t j = 0; j < WAH_BITS; ++j) { // WAH word loop
+                if (Pred::check_widx(b, gt_array[b], alt_allele)) {
+                    word |= WAH_HIGH_BIT;
+                    pred_counter++;
+                }
+                b++;
+                word >>= 1;
+            }
+
+            process_wah_word(word, all_set_counter, not_set_counter, wah);
+        }
+
+        // Edge case of remaining bits (pad with 0's) // Is separate from above to avoid the check in the main loop
+        if (BITS_REM) {
+            T word = 0;
+            for (size_t j = 0; j < WAH_BITS; ++j) {
+                if (j < BITS_REM) {
+                    if (Pred::check_widx(b, gt_array[b], alt_allele)) {
+                        word |= WAH_HIGH_BIT;
+                        pred_counter++;
+                    }
+                }
+                b++;
+                word >>= 1;
+            }
+            process_wah_word(word, all_set_counter, not_set_counter, wah);
+        }
+
+        // Push counters (they should be mutually exclusive, they cannot both be non zero)
+        if (not_set_counter) {
+            wah.push_back(WAH_HIGH_BIT | not_set_counter);
+        }
+        if (all_set_counter) {
+            wah.push_back(WAH_HIGH_BIT | WAH_COUNT_1_BIT | all_set_counter);
+        }
+
+        pred_count = pred_counter;
+        return wah;
+    }
+
+    /**
+     * @brief Copy-less reordering wah encoder
+     * */
+    template <typename T = uint16_t, typename A = uint16_t, class Pred = DefaultPred>
+    inline std::vector<T> wah_encode2_with_size(int32_t* gt_array, const int32_t& alt_allele, const std::vector<A>& a, const size_t size, uint32_t& alt_allele_count, bool& has_missing) {
+    // This is a second version where a counter is used both for 0's and 1's (but a N-2 bit counter)
+        constexpr size_t WAH_BITS = sizeof(T)*8-1;
+        // 0b1000'0000 for 8b
+        constexpr T WAH_HIGH_BIT = 1 << WAH_BITS; // Solved at compile time
+        constexpr T WAH_COUNT_1_BIT = WAH_HIGH_BIT >> 1;
+
+        // Resize to have no problems accessing in the loop below (removes conditionals from loop)
+        size_t BITS_WAH_SIZE = size / WAH_BITS;
+        const size_t BITS_REM = size % WAH_BITS; // Hope compiler combines the divide above and this mod
 
         std::vector<T> wah; // Output
 
@@ -672,11 +800,13 @@ namespace wah {
                     //std::cout << "Missing value found" << std::endl;
                     has_missing = true;
                 }
-                if (bcf_gt_allele(gt_array[a[b++]]) == alt_allele) {
+                //if (bcf_gt_allele(gt_array[a[b++]]) == alt_allele) {
+                if (Pred::check(gt_array[a[b]], alt_allele)) {
                     word |= WAH_HIGH_BIT;
                     alt_allele_counter++;
                 }
                 word >>= 1;
+                b++;
             }
 
             process_wah_word(word, all_set_counter, not_set_counter, wah);
@@ -691,12 +821,14 @@ namespace wah {
                         //std::cout << "Missing value found" << std::endl;
                         has_missing = true;
                     }
-                    if (bcf_gt_allele(gt_array[a[b++]]) == alt_allele) {
+                    //if (bcf_gt_allele(gt_array[a[b++]]) == alt_allele) {
+                    if (Pred::check(gt_array[a[b]], alt_allele)) {
                         word |= WAH_HIGH_BIT;
                         alt_allele_counter++;
                     }
                 }
                 word >>= 1;
+                b++;
             }
             process_wah_word(word, all_set_counter, not_set_counter, wah);
         }
@@ -710,8 +842,16 @@ namespace wah {
         }
 
         alt_allele_count = alt_allele_counter;
-        //minor_allele_count = std::min(uint32_t(a.size()) - alt_allele_counter, alt_allele_counter);
+        //minor_allele_count = std::min(uint32_t(size) - alt_allele_counter, alt_allele_counter);
         return wah;
+    }
+
+    /**
+     * @brief Copy-less reordering wah encoder
+     * */
+    template <typename T = uint16_t, typename A = uint16_t>
+    inline std::vector<T> wah_encode2(int32_t* gt_array, const int32_t& alt_allele, const std::vector<A>& a, uint32_t& alt_allele_count, bool& has_missing) {
+        return wah_encode2_with_size<T, A>(gt_array, alt_allele, a, a.size(), alt_allele_count, has_missing);
     }
 
     /**
