@@ -42,7 +42,7 @@
 
 using namespace wah;
 
-#include "accessor_internals.hpp" // For DecompressPointer, AccessorInternals
+#include "accessor_internals.hpp" // For AccessorInternals
 #include "interfaces.hpp"
 
 /// @todo DecompressPointer NEW version
@@ -90,6 +90,18 @@ public:
         }
 
         // Check for weirdness
+        if (dictionary.find(KEY_WEIRDNESS_STRATEGY) != dictionary.end()) {
+            //print_dictionary(dictionary);
+            weirdness_strat = (Weirdness_Strategy)dictionary.at(KEY_WEIRDNESS_STRATEGY);
+            //std::cerr << "Weirdness key : " << KEY_WEIRDNESS_STRATEGY << std::endl;
+            //std::cerr << "Weirdness strat : " << weirdness_strat << std::endl;
+            //if (weirdness_strat == WS_SPARSE) {
+            //    std::cerr << "Missng and end of vector are sparse encoded" << std::endl;
+            //}
+        } else {
+            weirdness_strat = WS_PBWT_WAH; // Was default for version 4
+        }
+
         block_has_weirdness = false;
         block_has_weirdness |= fill_bool_vector_from_1d_dict_key(KEY_LINE_MISSING, line_has_missing, binary_gt_lines_in_block);
         block_has_weirdness |= fill_bool_vector_from_1d_dict_key(KEY_LINE_END_OF_VECTORS, line_has_end_of_vector, binary_gt_lines_in_block);
@@ -117,9 +129,13 @@ public:
         missing_origin_p = get_pointer_from_dict<WAH_T>(KEY_MATRIX_MISSING);
         //if (missing_origin_p) std::cerr << "Missing 2D array found" << std::endl;
         missing_p = missing_origin_p;
+        sparse_missing_origin_p = get_pointer_from_dict<A_T>(KEY_MATRIX_MISSING_SPARSE);
+        sparse_missing_p = sparse_missing_origin_p;
 
         eovs_origin_p = get_pointer_from_dict<WAH_T>(KEY_MATRIX_END_OF_VECTORS);
         eovs_p = eovs_origin_p;
+        sparse_eovs_origin_p = get_pointer_from_dict<A_T>(KEY_MATRIX_END_OF_VECTORS_SPARSE);
+        sparse_eovs_p = sparse_eovs_origin_p;
 
         non_uniform_phasing_origin_p = get_pointer_from_dict<WAH_T>(KEY_MATRIX_NON_UNIFORM_PHASING);
         non_uniform_phasing_p = non_uniform_phasing_origin_p;
@@ -158,7 +174,7 @@ public:
                 } else {
                     // Is sparse
                     if (binary_gt_line_is_sorting[internal_binary_gt_line_position]) {
-                        sparse_p = sparse_extract(sparse_p);
+                        sparse_p = sparse_extract(sparse_p, sparse);
                     } else {
                         sparse_p = sparse_advance_pointer(sparse_p);
                     }
@@ -190,7 +206,7 @@ public:
 
         // Set REF / first ALT
         if (!binary_gt_line_is_wah[internal_binary_gt_line_position]) { /* SPARSE */
-            sparse_p = sparse_extract(sparse_p);
+            sparse_p = sparse_extract(sparse_p, sparse);
             int32_t default_gt = sparse_negated ? 1 : 0;
             int32_t sparse_gt = sparse_negated ? 0 : 1;
 
@@ -223,7 +239,7 @@ public:
         // If other ALTs (ALTs are 1 indexed, because 0 is REF)
         for (size_t alt_allele = 2; alt_allele < n_alleles; ++alt_allele) {
             if (!binary_gt_line_is_wah[internal_binary_gt_line_position]) { /* SPARSE */
-                sparse_p = sparse_extract(sparse_p);
+                sparse_p = sparse_extract(sparse_p, sparse);
                 if (sparse_negated) { // There can only be one negated because must be more than all others combined
                     // All non set positions are now filled
                     for (size_t i = 0; i < CURRENT_N_HAPS; ++i) {
@@ -281,25 +297,47 @@ public:
             // weirdness is either missing or end of vector
 
             if (line_has_missing.size() and line_has_missing[START_OFFSET]) {
-                // Fill missing without advance
-                //std::cerr << "Extracting missing from wah p" << std::endl;
-                /*missing_p =*/ (void) wah2_extract_count_ones(missing_p, y_missing, CURRENT_N_HAPS, n_missing);
-                for (size_t i = 0; i < CURRENT_N_HAPS; ++i) {
-                    if (y_missing[i]) {
-                        const auto index = a_weird[i];
-                        //std::cerr << "Filling a missing position" << std::endl;
+                if (weirdness_strat == WS_SPARSE) {
+                    // Fill missing without advance
+                    (void) sparse_extract(sparse_missing_p, sparse_missing);
+                    n_missing = sparse_missing.size();
+                    for (const auto& index : sparse_missing) {
                         gt_arr[index] = bcf_gt_missing | ((index & 1) & DEFAULT_PHASING);
                     }
+                } else if ((weirdness_strat == WS_PBWT_WAH) or (weirdness_strat == WS_WAH)) {
+                    // Fill missing without advance
+                    //std::cerr << "Extracting missing from wah p" << std::endl;
+                    /*missing_p =*/ (void) wah2_extract_count_ones(missing_p, y_missing, CURRENT_N_HAPS, n_missing);
+                    for (size_t i = 0; i < CURRENT_N_HAPS; ++i) {
+                        if (y_missing[i]) {
+                            const auto index = a_weird[i];
+                            //std::cerr << "Filling a missing position" << std::endl;
+                            gt_arr[index] = bcf_gt_missing | ((index & 1) & DEFAULT_PHASING);
+                        }
+                    }
+                } else {
+                    throw "Unsupported weirdness strategy";
                 }
             }
             if (line_has_end_of_vector.size() and line_has_end_of_vector[START_OFFSET]) {
-                // Fill eovs without advance
-                /*eovs_p =*/ (void) wah2_extract_count_ones(eovs_p, y_eovs, CURRENT_N_HAPS, n_eovs);
-                for (size_t i = 0; i < CURRENT_N_HAPS; ++i) {
-                    if (y_eovs[i]) {
-                        const auto index = a_weird[i];
+                if (weirdness_strat == WS_SPARSE) {
+                    // Fill eovs without advance
+                    (void) sparse_extract(sparse_eovs_p, sparse_eovs);
+                    n_eovs = sparse_eovs.size();
+                    for (const auto& index : sparse_eovs) {
                         gt_arr[index] = bcf_int32_vector_end;
                     }
+                } else if ((weirdness_strat == WS_PBWT_WAH) or (weirdness_strat == WS_WAH)) {
+                    // Fill eovs without advance
+                    /*eovs_p =*/ (void) wah2_extract_count_ones(eovs_p, y_eovs, CURRENT_N_HAPS, n_eovs);
+                    for (size_t i = 0; i < CURRENT_N_HAPS; ++i) {
+                        if (y_eovs[i]) {
+                            const auto index = a_weird[i];
+                            gt_arr[index] = bcf_int32_vector_end;
+                        }
+                    }
+                } else {
+                    throw "Unsupported weirdness strategy";
                 }
             }
 
@@ -357,6 +395,8 @@ public:
             internal_binary_weirdness_position = 0;
             missing_p = missing_origin_p;
             eovs_p = eovs_origin_p;
+            sparse_missing_p = sparse_missing_origin_p;
+            sparse_eovs_p = sparse_eovs_origin_p;
         }
         if (block_has_non_uniform_phasing) {
             internal_binary_phase_position = 0;
@@ -382,7 +422,7 @@ public:
             } else {
                 // Is sparse (both methods count ones)
                 if (binary_gt_line_is_sorting[internal_binary_gt_line_position]) {
-                    sparse_p = sparse_extract(sparse_p);
+                    sparse_p = sparse_extract(sparse_p, sparse);
                 } else {
                     sparse_p = sparse_advance_pointer(sparse_p);
                 }
@@ -394,59 +434,103 @@ public:
             total_alt += ones;
         }
 
-        allele_counts[0] = CURRENT_N_HAPS - total_alt; // - total missing ?
+        allele_counts[0] = CURRENT_N_HAPS - total_alt; // - total missing/eovs ?
     }
 
     inline const std::vector<size_t>& get_allele_count_ref() const {
         return allele_counts;
     }
 
+    InternalGtAccess get_internal_access(size_t n_alleles) {
+        InternalGtAccess ia;
+        ia.position = internal_binary_gt_line_position;
+        ia.n_alleles = n_alleles;
+        ia.sparse_bytes = sizeof(A_T);
+        constexpr A_T MSB_BIT = (A_T)1 << (sizeof(A_T)*8-1);
+        ia.wah_bytes = sizeof(WAH_T);
+        ia.a_bytes = sizeof(A_T);
+
+        if (n_alleles == 0) return ia;
+        for (size_t i = 0; i < n_alleles-1; ++i) {
+            seek(internal_binary_gt_line_position+i);
+            ia.a = a.data();
+            if (!binary_gt_line_is_wah[internal_binary_gt_line_position]) {
+                if (i == 0)
+                    ia.default_allele = ((*sparse_p) & MSB_BIT) ? 1 : 0; // If REF is sparse then MSB bit is set and ALT1 is default
+                ia.sparse.push_back(true);
+                ia.pointers.push_back(sparse_p);
+            } else {
+                if (i == 0)
+                    ia.default_allele = 0; // REF
+                ia.sparse.push_back(false);
+                ia.pointers.push_back(wah_p);
+            }
+        }
+
+        return ia;
+    }
+
+    bool current_position_is_sparse() const {
+        return !binary_gt_line_is_wah[internal_binary_gt_line_position];
+    }
+
 protected:
     inline void weirdness_advance(const size_t STEPS, const size_t CURRENT_N_HAPS) {
         // Update pointers and PBWT weirdness
         for (size_t i = 0; i < STEPS; ++i) {
-            bool current_line_has_missing = false;
-            bool current_line_has_eovs = false;
+            if (weirdness_strat == WS_SPARSE) {
+                if (line_has_missing.size() and line_has_missing[internal_binary_weirdness_position]) {
+                    sparse_missing_p = sparse_advance_pointer(sparse_missing_p);
+                }
+                if (line_has_end_of_vector.size() and line_has_end_of_vector[internal_binary_weirdness_position]) {
+                    sparse_eovs_p = sparse_advance_pointer(sparse_eovs_p);
+                }
+            } else {
+                bool current_line_has_missing = false;
+                bool current_line_has_eovs = false;
 
-            if (line_has_missing.size() and line_has_missing[internal_binary_weirdness_position]) {
-                current_line_has_missing = true;
-                // Advance missing pointer
-                missing_p = wah2_extract(missing_p, y_missing, CURRENT_N_HAPS);
-            }
-            if (line_has_end_of_vector.size() and line_has_end_of_vector[internal_binary_weirdness_position]) {
-                current_line_has_eovs = true;
-                // Fill eovs;
-                eovs_p = wah2_extract(eovs_p, y_eovs, CURRENT_N_HAPS);
-            }
-
-            // Update PBWT weirdness
-            /// @todo refactor all this
-            if (current_line_has_missing and current_line_has_eovs) {
-                // PBWT on both
-                if (haploid_binary_gt_line[internal_binary_weirdness_position]) {
-                    //bool_pbwt_sort_two<A_T, 2>(a_weird, b_weird, y_missing, y_eovs, N_HAPS);
+                if (line_has_missing.size() and line_has_missing[internal_binary_weirdness_position]) {
+                    current_line_has_missing = true;
+                    // Advance missing pointer
+                    missing_p = wah2_extract(missing_p, y_missing, CURRENT_N_HAPS);
                 }
-                else {
-                    bool_pbwt_sort_two<A_T>(a_weird, b_weird, y_missing, y_eovs, N_HAPS);
-                }
-            } else if (current_line_has_missing) {
-                // PBWT on missing
-                if (haploid_binary_gt_line[internal_binary_weirdness_position]) {
-                    //bool_pbwt_sort<A_T, 2>(a_weird, b_weird, y_missing, N_HAPS);
-                }
-                else {
-                    bool_pbwt_sort<A_T>(a_weird, b_weird, y_missing, N_HAPS);
+                if (line_has_end_of_vector.size() and line_has_end_of_vector[internal_binary_weirdness_position]) {
+                    current_line_has_eovs = true;
+                    // Fill eovs;
+                    eovs_p = wah2_extract(eovs_p, y_eovs, CURRENT_N_HAPS);
                 }
 
-            } else if (current_line_has_eovs) {
-                // PBWT on eovs
-                if (haploid_binary_gt_line[internal_binary_weirdness_position]) {
-                    //bool_pbwt_sort<A_T, 2>(a_weird, b_weird, y_eovs, N_HAPS);
+                if (weirdness_strat == WS_PBWT_WAH) {
+                    // Update PBWT weirdness
+                    /// @todo refactor all this
+                    if (current_line_has_missing and current_line_has_eovs) {
+                        // PBWT on both
+                        if (haploid_binary_gt_line[internal_binary_weirdness_position]) {
+                            //bool_pbwt_sort_two<A_T, 2>(a_weird, b_weird, y_missing, y_eovs, N_HAPS);
+                        }
+                        else {
+                            bool_pbwt_sort_two<A_T>(a_weird, b_weird, y_missing, y_eovs, N_HAPS);
+                        }
+                    } else if (current_line_has_missing) {
+                        // PBWT on missing
+                        if (haploid_binary_gt_line[internal_binary_weirdness_position]) {
+                            //bool_pbwt_sort<A_T, 2>(a_weird, b_weird, y_missing, N_HAPS);
+                        }
+                        else {
+                            bool_pbwt_sort<A_T>(a_weird, b_weird, y_missing, N_HAPS);
+                        }
+
+                    } else if (current_line_has_eovs) {
+                        // PBWT on eovs
+                        if (haploid_binary_gt_line[internal_binary_weirdness_position]) {
+                            //bool_pbwt_sort<A_T, 2>(a_weird, b_weird, y_eovs, N_HAPS);
+                        }
+                        else {
+                            bool_pbwt_sort<A_T>(a_weird, b_weird, y_eovs, N_HAPS);
+                        }
+                    }
                 }
-                else {
-                    bool_pbwt_sort<A_T>(a_weird, b_weird, y_eovs, N_HAPS);
-                }
-            }
+            } /* weirdness strat */
 
             internal_binary_weirdness_position++;
         }
@@ -532,7 +616,7 @@ protected:
         }
     }
 
-    A_T* sparse_extract(A_T* s_p) {
+    A_T* sparse_extract(A_T* s_p, std::vector<size_t>& sparse) {
         constexpr A_T MSB_BIT = (A_T)1 << (sizeof(A_T)*8-1);
         A_T num = *s_p;
         s_p++;
@@ -592,11 +676,18 @@ protected:
     bool sparse_negated;
 
     // Weirdness
+    Weirdness_Strategy weirdness_strat;
     bool block_has_weirdness;
     WAH_T* missing_origin_p;
     WAH_T* missing_p;
+    A_T* sparse_missing_origin_p;
+    A_T* sparse_missing_p;
+    std::vector<size_t> sparse_missing;
     WAH_T* eovs_origin_p;
     WAH_T* eovs_p;
+    A_T* sparse_eovs_origin_p;
+    A_T* sparse_eovs_p;
+    std::vector<size_t> sparse_eovs;
     int32_t DEFAULT_PHASING;
     bool block_has_non_uniform_phasing;
     WAH_T* non_uniform_phasing_origin_p;
@@ -627,8 +718,8 @@ protected:
 
 template <typename A_T = uint32_t, typename WAH_T = uint16_t>
 class AccessorInternalsNewTemplate : public AccessorInternals {
-public:
-    size_t fill_genotype_array(int32_t* gt_arr, size_t gt_arr_size, size_t n_alleles, size_t new_position) override {
+private:
+    inline void seek(const size_t& new_position) {
         const size_t OFFSET_MASK = ~((((size_t)-1) >> BM_BLOCK_BITS) << BM_BLOCK_BITS);
         size_t block_id = ((new_position & 0xFFFFFFFF) >> BM_BLOCK_BITS);
         // The offset is relative to the start of the block and is binary gt lines
@@ -644,31 +735,29 @@ public:
         }
 
         dp->seek(offset);
+    }
+
+public:
+    size_t fill_genotype_array(int32_t* gt_arr, size_t gt_arr_size, size_t n_alleles, size_t new_position) override {
+        seek(new_position);
+
         return dp->fill_genotype_array_advance(gt_arr, gt_arr_size, n_alleles);
     }
 
     void fill_allele_counts(size_t n_alleles, size_t new_position) override {
-        // Conversion from new to old, for the moment
-        size_t block_id = new_position >> BM_BLOCK_BITS;
-        // The offset is relative to the start of the block and is binary gt lines
-        int32_t offset = (new_position << (32-BM_BLOCK_BITS)) >> (32-BM_BLOCK_BITS);
+        seek(new_position);
 
-        // If block ID is not current block
-        if (!dp or current_block != block_id) {
-            // Gets block from file (can decompress)
-            set_gt_block_ptr(block_id);
-
-            // Make DecompressPointer
-            dp = make_unique<DecompressPointerGTBlock<A_T, WAH_T> >(header, gt_block_p);
-        }
-
-        dp->seek(offset);
         dp->fill_allele_counts_advance(n_alleles);
     }
 
     // Directly pass the DecompressPointer Allele counts
     virtual inline const std::vector<size_t>& get_allele_counts() const override {
         return dp->get_allele_count_ref();
+    }
+
+    inline InternalGtAccess get_internal_access(size_t n_alleles, size_t position) override {
+        seek(position);
+        return dp->get_internal_access(n_alleles);
     }
 
     AccessorInternalsNewTemplate(std::string filename) {

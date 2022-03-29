@@ -1,5 +1,7 @@
 /*******************************************************************************
- * Copyright (C) 2021 Rick Wertenbroek, University of Lausanne
+ * Copyright (C) 2021 Rick Wertenbroek, University of Lausanne (UNIL),
+ * University of Applied Sciences and Arts Western Switzerland (HES-SO),
+ * School of Management and Engineering Vaud (HEIG-VD).
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -297,5 +299,9 @@ void compute_phase_switch_errors(const std::string& testFile, const std::string&
 int32_t seek_default_phased(const std::string& filename, size_t limit = 3);
 
 size_t seek_max_ploidy_from_first_entry(const std::string& filename);
+
+bool file_has_no_samples(const std::string& filename);
+
+bool file_has_no_entries(const std::string& filename);
 
 #endif /* __XCF_HPP__ */

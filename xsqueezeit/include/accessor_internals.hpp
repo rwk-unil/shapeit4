@@ -1,5 +1,7 @@
 /*******************************************************************************
- * Copyright (C) 2021 Rick Wertenbroek, University of Lausanne
+ * Copyright (C) 2021 Rick Wertenbroek, University of Lausanne (UNIL),
+ * University of Applied Sciences and Arts Western Switzerland (HES-SO),
+ * School of Management and Engineering Vaud (HEIG-VD).
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -45,6 +47,7 @@ static constexpr bool DEBUG_DECOMP = true;
 #endif
 using namespace wah;
 
+#if 0
 template <typename A_T = uint32_t, typename WAH_T = uint16_t>
 class DecompressPointer {
 public:
@@ -366,6 +369,32 @@ protected:
     void *file_mmap_p;
     const bool compressed;
 };
+#endif
+
+class InternalGtAccess {
+public:
+    size_t position;
+    size_t n_alleles;
+    size_t sparse_bytes;
+    size_t wah_bytes;
+    size_t a_bytes;
+    int32_t default_allele;
+    const void *a;
+    std::vector<bool> sparse;
+    std::vector<void *> pointers;
+
+    void print_info() const {
+        std::cerr << "Position = " << position << "\n";
+        std::cerr << "n_alleles = " << n_alleles << "\n";
+        std::cerr << "sparse_bytes = " << sparse_bytes << "\n";
+        std::cerr << "wah_bytes = " << wah_bytes << "\n";
+        std::cerr << "Sparse vector : ";
+        for (size_t i = 0; i < sparse.size(); ++i) {
+            std::cerr << (sparse[i] ? "1" : "0");
+        }
+        std::cerr << std::endl;
+    }
+};
 
 class AccessorInternals {
 public:
@@ -374,6 +403,7 @@ public:
     // Fill genotype array also fills allele counts, so this is only to be used when fill_genotype_array is not called (e.g., to recompute AC only)
     virtual void fill_allele_counts(size_t n_alleles, size_t position) = 0;
     virtual inline const std::vector<size_t>& get_allele_counts() const {return allele_counts;}
+    virtual inline InternalGtAccess get_internal_access(size_t n_alleles, size_t position) = 0;
     //virtual const std::unordered_map<size_t, std::vector<size_t> >& get_missing_sparse_map() const = 0;
     //virtual const std::unordered_map<size_t, std::vector<size_t> >& get_phase_sparse_map() const = 0;
 protected:
@@ -382,6 +412,7 @@ protected:
     const size_t BM_BLOCK_BITS = 15;
 };
 
+#if 0
 template <typename A_T = uint32_t, typename WAH_T = uint16_t>
 class AccessorInternalsTemplate : public AccessorInternals {
 public:
@@ -698,5 +729,6 @@ protected:
 
     std::unique_ptr<DecompressPointer<A_T, WAH_T> > dp;
 };
+#endif
 
 #endif /* __ACCESSOR_INTERNALS_HPP__ */

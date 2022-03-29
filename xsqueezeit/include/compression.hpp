@@ -1,5 +1,7 @@
 /*******************************************************************************
- * Copyright (C) 2021 Rick Wertenbroek, University of Lausanne
+ * Copyright (C) 2021 Rick Wertenbroek, University of Lausanne (UNIL),
+ * University of Applied Sciences and Arts Western Switzerland (HES-SO),
+ * School of Management and Engineering Vaud (HEIG-VD).
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -27,6 +29,8 @@
 #include <vector>
 #include <fstream>
 #include <iostream>
+
+#include "git_rev.h"
 
 typedef std::vector<size_t> ppa_t;
 
@@ -92,7 +96,8 @@ struct header_s {
     uint8_t rsvd_3[104] = {0,};
 
     // 32 bytes
-    uint32_t rsvd_4[3] = {0,};
+    uint32_t git_revision = GIT_REVISION;
+    uint32_t rsvd_4[2] = {0,};
     uint32_t sample_name_chksum = 0;  // Checksum unused for now
     uint32_t bcf_file_chksum = 0;     // Checksum unused for now
     uint32_t data_chksum = 0;         // Checksum unused for now
@@ -107,22 +112,24 @@ static_assert(sizeof(header_t) == 256, "Header is not 256 bytes");
 template<typename _ = uint32_t> /// @todo remove template, this is lazyness...
 void print_header_info(const header_t& header) {
     std::cerr << "Version : " << header.version << std::endl;
+    if (header.git_revision) printf("Git revision : %07x\n", header.git_revision);
     std::cerr << "Ploidy : " << (size_t)header.ploidy << std::endl;
     std::cerr << "Indice bytes : " << (size_t)header.ind_bytes << std::endl;
     std::cerr << "Sample id bytes : " << (size_t)header.aet_bytes << std::endl;
     std::cerr << "WAH bytes : " << (size_t)header.wah_bytes << std::endl;
     std::cerr << "--" << std::endl;
-    std::cerr << "Has missing : " << (header.has_missing ? "yes" : "no") << std::endl;
-    std::cerr << "Has non uniform phasing : " << (header.non_uniform_phasing ? "yes" : "no") << std::endl;
-    std::cerr << "Uses PPA's : " << (header.iota_ppa ? "no" : "yes" ) << std::endl;
-    std::cerr << "Is not sorted : " << (header.no_sort ? "yes" : "no" ) << std::endl;
+    //std::cerr << "Has missing : " << (header.has_missing ? "yes" : "no") << std::endl;
+    //std::cerr << "Has non uniform phasing : " << (header.non_uniform_phasing ? "yes" : "no") << std::endl;
+    //std::cerr << "Uses PPA's : " << (header.iota_ppa ? "no" : "yes" ) << std::endl;
+    //std::cerr << "Is not sorted : " << (header.no_sort ? "yes" : "no" ) << std::endl;
     std::cerr << "Has a zstd compression layer : " << (header.zstd ? "yes" : "no") << std::endl;
     std::cerr << "--" << std::endl;
     std::cerr << "Haplotype samples  : " << header.hap_samples << std::endl;
+    std::cerr << "Number of samples  : " << header.num_samples << std::endl;
     std::cerr << "Number of variants : " << header.num_variants << std::endl;
     std::cerr << "--" << std::endl;
     std::cerr << "VCF records : " << header.xcf_entries << std::endl;
-    std::cerr << "Permutation arrays  : " << header.wahs_offset - header.ssas_offset << " bytes" << std::endl;
+    //std::cerr << "Permutation arrays  : " << header.wahs_offset - header.ssas_offset << " bytes" << std::endl;
     std::cerr << "GT Data WAH encoded : " << header.samples_offset - header.wahs_offset << " bytes" << std::endl;
 }
 

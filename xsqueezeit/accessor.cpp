@@ -1,5 +1,7 @@
 /*******************************************************************************
- * Copyright (C) 2021 Rick Wertenbroek, University of Lausanne
+ * Copyright (C) 2021 Rick Wertenbroek, University of Lausanne (UNIL),
+ * University of Applied Sciences and Arts Western Switzerland (HES-SO),
+ * School of Management and Engineering Vaud (HEIG-VD).
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -61,13 +63,15 @@ Accessor::Accessor(std::string& filename) : filename(filename) {
         if (header.version == 4) {
             internals = make_unique<AccessorInternalsNewTemplate<uint16_t> >(filename);
         } else {
-            internals = make_unique<AccessorInternalsTemplate<uint16_t> >(filename);
+            std::cerr << "Unsupported version : " << header.version << std::endl;
+            throw "Unsupported version";
         }
     } else if (header.aet_bytes == 4) {
         if (header.version == 4) {
             internals = make_unique<AccessorInternalsNewTemplate<uint32_t> >(filename);
         } else {
-            internals = make_unique<AccessorInternalsTemplate<uint32_t> >(filename);
+            std::cerr << "Unsupported version : " << header.version << std::endl;
+            throw "Unsupported version";
         }
     } else {
         std::cerr << "Unsupported access type" << std::endl;
@@ -80,5 +84,6 @@ Accessor::Accessor(std::string& filename) : filename(filename) {
 Accessor::~Accessor() {
     if (values) {
         free(values);
+        values = NULL;
     }
 }
